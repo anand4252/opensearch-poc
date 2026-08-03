@@ -1,0 +1,35 @@
+"""Bulk indexing helpers.
+
+Each document passes through the index's default ingest pipeline, which runs the
+sparse-encoding model. That is relatively slow per document, so we keep batches
+small (mirroring the AWS setup this is modelled on).
+"""
+
+from opensearchpy import helpers
+
+from app.config import Settings
+
+BATCH_SIZE = 25
+
+
+def bulk_index(client, settings: Settings, documents: list[dict]) -> tuple[int, int]:
+    """Index documents; return (success_count, error_count)."""
+    success_count = 0
+    error_count = 0
+
+    for start in range(0, len(documents), BATCH_SIZE):
+        batch = documents[start : start + BATCH_SIZE]
+        actions = [{"_index": settings.index_name, "_source": doc} for doc in batch]
+        success, errors = helpers.bulk(
+            client, actions, raise_on_error=False, request_timeout=300
+        )
+        success_count += success
+        if errors:
+            error_count += len(errors)
+
+    client.indices.refresh(index=settings.index_name)
+    return success_count, error_count
+
+
+def index_count(client, settings: Settings) -> int:
+    return client.count(index=settings.index_name)["count"]

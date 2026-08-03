@@ -1,0 +1,65 @@
+# Single-node OpenSearch + Dashboards for local hybrid (BM25 + neural sparse) search.
+# Security plugin is DISABLED (plain HTTP, no auth) — local development only.
+#
+# Prereqs (run once per podman machine boot):
+#   podman machine ssh 'sudo sysctl -w vm.max_map_count=262144'
+# Recommended machine size (host has plenty of RAM):
+#   podman machine stop && podman machine set --memory 8192 --cpus 4 && podman machine start
+services:
+  opensearch-node1:
+    image: opensearchproject/opensearch:2.19.1
+    container_name: opensearch-node1
+    environment:
+      - cluster.name=hybrid-sparse-cluster
+      - node.name=opensearch-node1
+      - discovery.type=single-node
+      # Disable the security plugin for simple local dev (no TLS, no auth).
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+      # JVM heap (machine sized to 8 GiB leaves ample room for this + the sparse model).
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - bootstrap.memory_lock=true
+      # ML Commons: allow the sparse model to run on this single (non-dedicated-ML) node.
+      - plugins.ml_commons.only_run_on_ml_node=false
+      - plugins.ml_commons.model_access_control_enabled=false
+      - plugins.ml_commons.native_memory_threshold=99
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data1:/usr/share/opensearch/data
+    ports:
+      - "9200:9200"   # REST API
+      - "9600:9600"   # performance analyzer
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - opensearch-net
+
+  opensearch-dashboards:
+    image: opensearchproject/opensearch-dashboards:2.19.1
+    container_name: opensearch-dashboards
+    ports:
+      - "5601:5601"
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch-node1:9200"]
+      # Dashboards must also drop its security plugin to talk to an unsecured node.
+      - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
+    depends_on:
+      - opensearch-node1
+    networks:
+      - opensearch-net
+
+volumes:
+  opensearch-data1:
+
+networks:
+  opensearch-net:

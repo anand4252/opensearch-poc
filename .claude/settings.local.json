@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/t903727/Personal/my-repo/opensearch status)",
+      "Bash(docker --version)",
+      "Bash(podman machine *)",
+      "Bash(podman compose *)"
+    ]
+  }
+}
