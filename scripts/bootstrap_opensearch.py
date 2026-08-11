@@ -37,7 +37,7 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 def apply_ml_settings(client) -> None:
-    print("\n[1/6] Applying ML Commons cluster settings...")
+    print("\n[1/6] Applying ML Commons cluster settings to run on single node and increase the memory threshold guard...")
     client.cluster.put_settings(
         body={
             "persistent": {
