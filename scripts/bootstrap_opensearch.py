@@ -5,16 +5,18 @@ in *doc-only* mode:
 
   - Ingest time: a sparse-encoding model expands each document's text into a
     map of token -> weight, stored in a `rank_features` field.
-  - Query time : a plain analyzer ("bert-uncased") tokenizes the query, so there
-    is NO model inference at search time (low latency).
+  - Query time : a lightweight tokenizer model tokenizes the query (no heavy
+    inference at search time -> low latency). OpenSearch 2.19 doesn't support the
+    `analyzer` field on neural_sparse queries, so the query references this
+    tokenizer model by id instead.
 
 Steps (idempotent — safe to re-run):
   1. Apply ML Commons cluster settings.
-  2. Register + deploy the sparse doc model, capture its model_id.
+  2. Register + deploy the sparse ingest model AND the query tokenizer model.
   3. Create the ingest pipeline (sparse_encoding processor).
   4. Create the index (text + rank_features fields, default_pipeline).
   5. Create the search pipeline (normalization-processor for hybrid scoring).
-  6. Persist the resolved model_id into .env (MODEL_ID=...).
+  6. Persist the resolved model ids into .env (MODEL_ID, QUERY_MODEL_ID).
 
 Run:  uv run python scripts/bootstrap_opensearch.py
       uv run python scripts/bootstrap_opensearch.py --recreate-index   # drop & recreate index
@@ -37,7 +39,10 @@ ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
 
 
 def apply_ml_settings(client) -> None:
-    print("\n[1/6] Applying ML Commons cluster settings to run on single node and increase the memory threshold guard...")
+    print(
+        "\n[1/6] Applying ML Commons cluster settings "
+        "(run on single node + raise memory threshold guard)..."
+    )
     client.cluster.put_settings(
         body={
             "persistent": {
@@ -84,9 +89,9 @@ def _find_deployed_model(client, model_name: str) -> str | None:
     return None
 
 
-def register_and_deploy_model(client, settings) -> str:
-    print("\n[2/6] Registering + deploying sparse doc model...")
-    existing = _find_deployed_model(client, settings.model_name)
+def _register_and_deploy(client, name: str, version: str, model_format: str) -> str:
+    """Register + deploy one pretrained model, reusing it if already deployed."""
+    existing = _find_deployed_model(client, name)
     if existing:
         print(f"      reusing already-deployed model: {existing}")
         return existing
@@ -94,17 +99,33 @@ def register_and_deploy_model(client, settings) -> str:
     resp = client.transport.perform_request(
         "POST",
         "/_plugins/_ml/models/_register?deploy=true",
-        body={
-            "name": settings.model_name,
-            "version": settings.model_version,
-            "model_format": settings.model_format,
-        },
+        body={"name": name, "version": version, "model_format": model_format},
     )
     task_id = resp["task_id"]
     print(f"      task id: {task_id}")
     model_id = _poll_task(client, task_id)
     print(f"      model deployed: {model_id}")
     return model_id
+
+
+def register_and_deploy_models(client, settings) -> tuple[str, str]:
+    """Deploy both the ingest (doc) model and the query tokenizer model.
+
+    Doc-only mode needs two models:
+      - ingest model  -> expands documents into sparse token->weight features
+      - query tokenizer -> tokenizes the query at search time (low latency)
+    Returns (ingest_model_id, query_model_id).
+    """
+    print("\n[2/6] Registering + deploying sparse models (ingest + query tokenizer)...")
+    print(f"      ingest model : {settings.model_name}")
+    ingest_id = _register_and_deploy(
+        client, settings.model_name, settings.model_version, settings.model_format
+    )
+    print(f"      query model  : {settings.query_model_name}")
+    query_id = _register_and_deploy(
+        client, settings.query_model_name, settings.query_model_version, settings.model_format
+    )
+    return ingest_id, query_id
 
 
 def create_ingest_pipeline(client, settings, model_id: str) -> None:
@@ -183,22 +204,27 @@ def create_search_pipeline(client, settings) -> None:
     print("      done.")
 
 
-def persist_model_id(model_id: str) -> None:
-    print(f"\n[6/6] Persisting MODEL_ID to {ENV_FILE.name}...")
+def _set_env_var(lines: list[str], key: str, value: str) -> list[str]:
+    """Replace `key=...` in .env lines, or append it if not present."""
+    prefix = f"{key}="
+    for i, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[i] = f"{key}={value}"
+            return lines
+    lines.append(f"{key}={value}")
+    return lines
+
+
+def persist_model_ids(model_id: str, query_model_id: str) -> None:
+    print(f"\n[6/6] Persisting MODEL_ID + QUERY_MODEL_ID to {ENV_FILE.name}...")
     if not ENV_FILE.exists():
         # Seed from the example if the user hasn't copied it yet.
         example = ENV_FILE.with_name(".env.example")
         ENV_FILE.write_text(example.read_text() if example.exists() else "")
 
     lines = ENV_FILE.read_text().splitlines()
-    replaced = False
-    for i, line in enumerate(lines):
-        if line.startswith("MODEL_ID="):
-            lines[i] = f"MODEL_ID={model_id}"
-            replaced = True
-            break
-    if not replaced:
-        lines.append(f"MODEL_ID={model_id}")
+    lines = _set_env_var(lines, "MODEL_ID", model_id)
+    lines = _set_env_var(lines, "QUERY_MODEL_ID", query_model_id)
     ENV_FILE.write_text("\n".join(lines) + "\n")
     print("      done.")
 
@@ -224,14 +250,15 @@ def main() -> int:
     print(f"Connected. Cluster '{health['cluster_name']}' status: {health['status']}")
 
     apply_ml_settings(client)
-    model_id = register_and_deploy_model(client, settings)
+    model_id, query_model_id = register_and_deploy_models(client, settings)
     create_ingest_pipeline(client, settings, model_id)
     create_index(client, settings, recreate=args.recreate_index)
     create_search_pipeline(client, settings)
-    persist_model_id(model_id)
+    persist_model_ids(model_id, query_model_id)
 
     print("\nBootstrap complete.")
-    print(f"  model_id        : {model_id}")
+    print(f"  ingest model_id : {model_id}")
+    print(f"  query model_id  : {query_model_id}")
     print(f"  index           : {settings.index_name}")
     print(f"  ingest pipeline : {settings.ingest_pipeline}")
     print(f"  search pipeline : {settings.search_pipeline}")

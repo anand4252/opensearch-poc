@@ -1,10 +1,11 @@
 COMPOSE := podman-compose -f docker/compose.yml
 
-.PHONY: help sync up down logs sysctl bootstrap run seed test lint
+.PHONY: help sync sync-offvpn up down logs sysctl bootstrap run seed test lint
 
 help:
 	@echo "Targets:"
-	@echo "  make sync      - install python deps with uv"
+	@echo "  make sync         - install python deps with uv (on VPN / corporate index)"
+	@echo "  make sync-offvpn  - install python deps from public PyPI (off VPN)"
 	@echo "  make sysctl    - set vm.max_map_count in the podman VM (needed by OpenSearch)"
 	@echo "  make up        - start OpenSearch + Dashboards (podman-compose)"
 	@echo "  make down      - stop the stack"
@@ -17,6 +18,15 @@ help:
 
 sync:
 	uv sync --extra dev
+
+# Off-VPN install: this Mac's shell points uv at a private package index (UV_DEFAULT_INDEX)
+# and a corporate proxy/cert bundle, none of which resolve off VPN. Strip those for
+# this one command and pull from public PyPI, using the macOS keychain (--native-tls).
+sync-offvpn:
+	env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+	    -u SSL_CERT_FILE -u CURL_CA_BUNDLE -u VIRTUAL_ENV \
+	    UV_DEFAULT_INDEX=https://pypi.org/simple UV_INDEX= \
+	    uv sync --extra dev --native-tls
 
 # sysctl:
 # 	podman machine ssh 'sudo sysctl -w vm.max_map_count=262144'

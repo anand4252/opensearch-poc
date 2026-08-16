@@ -10,13 +10,14 @@ def _lexical_query(settings: Settings, query: str) -> dict:
 
 
 def _sparse_query(settings: Settings, query: str) -> dict:
-    """Neural sparse, doc-only mode: the query is tokenized by an analyzer,
-    so no model inference happens at search time."""
+    """Neural sparse, doc-only mode: the query is tokenized by a lightweight
+    tokenizer model (no heavy inference at search time). On OpenSearch 2.19 the
+    `analyzer` field is unsupported, so we reference the tokenizer by model_id."""
     return {
         "neural_sparse": {
             settings.embedding_field: {
                 "query_text": query,
-                "analyzer": settings.query_analyzer,
+                "model_id": settings.query_model_id,
             }
         }
     }
