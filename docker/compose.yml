@@ -7,7 +7,7 @@
 #   podman machine stop && podman machine set --memory 8192 --cpus 4 && podman machine start
 services:
   opensearch-node1:
-    image: opensearchproject/opensearch:2.19.1
+    image: opensearchproject/opensearch:3.7.0
     container_name: opensearch-node1
     environment:
       - cluster.name=hybrid-sparse-cluster
@@ -45,7 +45,7 @@ services:
       - opensearch-net
 
   opensearch-dashboards:
-    image: opensearchproject/opensearch-dashboards:2.19.1
+    image: opensearchproject/opensearch-dashboards:3.7.0
     container_name: opensearch-dashboards
     ports:
       - "5601:5601"

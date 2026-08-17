@@ -22,14 +22,9 @@ class Settings(BaseSettings):
     model_format: str = "TORCH_SCRIPT"
     model_id: str = ""
 
-    # Neural sparse QUERY tokenizer (doc-only): tokenizes the query at search time.
-    # OpenSearch 2.19 does NOT support the `analyzer` field on neural_sparse queries;
-    # doc-only search there references this lightweight tokenizer model by id instead.
-    query_model_name: str = (
-        "amazon/neural-sparse/opensearch-neural-sparse-tokenizer-v1"
-    )
-    query_model_version: str = "1.0.1"
-    query_model_id: str = ""
+    # Neural sparse QUERY side (doc-only): OpenSearch 3.x tokenizes the query with a
+    # built-in analyzer (no query-time model inference), so no tokenizer model is needed.
+    query_analyzer: str = "bert-uncased"
 
     # Hybrid score combination weights: [lexical, sparse]
     lexical_weight: float = 0.3

@@ -26,15 +26,13 @@ compares with kNN. *Sparse* search instead produces a sparse `token → weight` 
 bag of words). It stores into a Lucene `rank_features` field — no vector index — and tends to be
 strong on keyword-ish relevance while still capturing term expansion (synonyms, related concepts).
 
-**Doc-only mode** is the key efficiency trick: the heavy encoding model runs **only at ingest time**
-to expand documents. At **query time** a lightweight **tokenizer model**
-(`opensearch-neural-sparse-tokenizer-v1`) just tokenizes the query — **no heavy model inference at
-search time**, so queries stay fast.
+**Doc-only mode** is the key efficiency trick: the encoding model runs **only at ingest time** to
+expand documents. At **query time** a built-in analyzer (`bert-uncased`) tokenizes the query — **no
+model inference at search time**, so queries stay fast.
 
-> **Version note:** OpenSearch **2.19 does not support** the `analyzer` field on `neural_sparse`
-> queries (that's a newer-version feature). On 2.19 the doc-only query references the tokenizer model
-> by `model_id` instead — which is what this project does. Bootstrap deploys both the ingest model and
-> the tokenizer and writes `MODEL_ID` + `QUERY_MODEL_ID` to `.env`.
+> **Version note:** this project targets **OpenSearch 3.x** (pinned `3.7.0`), where the `neural_sparse`
+> query accepts an `analyzer` field directly — no separate query-side model to deploy. (On older 2.x
+> you had to deploy a tokenizer model and reference it by `model_id`; 3.x removed that extra step.)
 
 ---
 
@@ -122,7 +120,7 @@ POST hybrid-sparse-index/_search?search_pipeline=hybrid-sparse-search
       "queries": [
         { "match": { "combined_text": "scary movies with ghosts" } },
         { "neural_sparse": { "combined_text_embedding": {
-            "query_text": "scary movies with ghosts", "model_id": "<QUERY_MODEL_ID>" } } }
+            "query_text": "scary movies with ghosts", "analyzer": "bert-uncased" } } }
       ]
     }
   }
@@ -136,9 +134,8 @@ POST hybrid-sparse-index/_search?search_pipeline=hybrid-sparse-search
 Implemented in [`scripts/bootstrap_opensearch.py`](scripts/bootstrap_opensearch.py), idempotent:
 
 1. **ML Commons settings** — allow the model to run on this single (non-ML) node.
-2. **Register + deploy** two models — the sparse **ingest** model and the **query tokenizer** — polling
-   each task until `COMPLETED`; capture `MODEL_ID` and `QUERY_MODEL_ID` (reuses already-deployed
-   models on re-run).
+2. **Register + deploy** the sparse ingest model; poll the task until `COMPLETED`, capture `MODEL_ID`
+   (reuses an already-deployed model on re-run). No query-side model needed on 3.x.
 3. **Ingest pipeline** — `sparse_encoding` processor maps `combined_text → combined_text_embedding`.
 4. **Index** — `combined_text` (`text`, BM25) + `combined_text_embedding` (`rank_features`, sparse),
    `default_pipeline` set, `1 shard / 0 replicas` (single-node → green health).
@@ -204,9 +201,9 @@ pipeline are identical** in shape.
 - **Model stuck / `FAILED` during bootstrap** — check ML logs: `make logs`. Ensure the ML Commons
   settings applied and the node has memory headroom. Re-running `make bootstrap` reuses a deployed
   model.
-- **`neural_sparse` analyzer error** — the doc-only `analyzer` query and the v3-distill model require
-  a recent OpenSearch (this project pins `2.19.1`). If your image differs, update the tag in
-  `docker/compose.yml` and `MODEL_*` in `.env`.
+- **`neural_sparse` analyzer error** (`does not support [analyzer] field`) — the `analyzer` form
+  needs **OpenSearch 3.x** (this project pins `3.7.0`). On older 2.x, deploy the tokenizer model
+  `opensearch-neural-sparse-tokenizer-v1` and pass its `model_id` instead of `analyzer`.
 - **Cluster health `yellow`** — expected only if replicas > 0 on a single node; this setup uses
   0 replicas, so health should be `green`.
 - **Slow seeding** — sparse encoding runs per document at ingest; the sample corpus is small on
