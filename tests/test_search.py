@@ -40,8 +40,8 @@ def test_build_body_lexical_is_match(settings):
 
 @pytest.mark.parametrize("mode", list(SearchMode))
 def test_search_returns_hits(client, settings, mode):
-    # "family" appears literally in the corpus, so lexical, sparse, and hybrid
+    # "man" appears literally in many Flickr captions, so lexical, sparse, and hybrid
     # all return hits (a purely semantic query would legitimately miss in lexical).
-    resp = run_search(client, settings, "family", mode, size=5)
+    resp = run_search(client, settings, "man", mode, size=5)
     assert resp.mode is mode
     assert len(resp.hits) > 0

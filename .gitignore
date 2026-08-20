@@ -14,3 +14,7 @@ uv.lock
 
 # OS / IDE
 .DS_Store
+
+# Derived corpus + images (rebuilt from data/results.csv / Kaggle — see README)
+data/flickr_docs.json
+data/images/

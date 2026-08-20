@@ -26,6 +26,12 @@ class IngestResponse(BaseModel):
     total_in_index: int
 
 
+class PrepareResponse(BaseModel):
+    images_available: int
+    docs_written: int
+    output_file: str
+
+
 class SearchRequest(BaseModel):
     query: str
     mode: SearchMode = SearchMode.hybrid

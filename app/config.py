@@ -34,6 +34,13 @@ class Settings(BaseSettings):
     text_field: str = "combined_text"
     embedding_field: str = "combined_text_embedding"
 
+    # Dataset / seeding. `seed_data_file` is what /documents/seed indexes; the Flickr
+    # subset is built from `flickr_csv` by scripts/prepare_flickr.py (see README).
+    seed_data_file: str = "data/flickr_docs.json"
+    flickr_csv: str = "data/results.csv"
+    flickr_subset_size: int = 1000
+    flickr_images_dir: str = "data/images"
+
 
 def get_settings() -> Settings:
     return Settings()

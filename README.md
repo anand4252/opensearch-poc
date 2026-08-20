@@ -78,7 +78,10 @@ cp .env.example .env
 #    (writes the resolved MODEL_ID back into .env)
 make bootstrap
 
-# 4. run the API and seed the sample corpus
+# 4. build the dataset from the committed captions (data/results.csv -> data/flickr_docs.json)
+make prepare
+
+# 5. run the API and seed the dataset
 make run                       # http://localhost:8000/docs  (leave running)
 make seed                      # in another terminal
 ```
@@ -87,18 +90,20 @@ make seed                      # in another terminal
 
 ## Try it — compare the three modes
 
-The sample corpus has horror, superhero, action, comedy, sci-fi, and animated films. A good query to
-show the difference is one where the *concept* matters more than the exact words:
+The dataset is **Flickr30k image captions** — each document is one image, its five human-written
+captions merged into `combined_text`, and `name` is the image filename. So a search is really
+*text → image retrieval*: type a scene, get back the image whose captions best match. Good queries
+are scene descriptions where the *concept* matters more than the exact words:
 
 ```bash
 # Lexical only — needs the literal words to appear
-curl -s 'http://localhost:8000/search?q=scary%20movies%20with%20ghosts&mode=lexical' | python3 -m json.tool
+curl -s 'http://localhost:8000/search?q=a%20dog%20running%20on%20the%20beach&mode=lexical' | python3 -m json.tool
 
-# Sparse semantic — matches the horror films via term expansion
-curl -s 'http://localhost:8000/search?q=scary%20movies%20with%20ghosts&mode=sparse'  | python3 -m json.tool
+# Sparse semantic — also matches captions via term expansion
+curl -s 'http://localhost:8000/search?q=a%20dog%20running%20on%20the%20beach&mode=sparse'  | python3 -m json.tool
 
 # Hybrid — normalized blend of both (default)
-curl -s 'http://localhost:8000/search?q=scary%20movies%20with%20ghosts&mode=hybrid'  | python3 -m json.tool
+curl -s 'http://localhost:8000/search?q=a%20dog%20running%20on%20the%20beach&mode=hybrid'  | python3 -m json.tool
 ```
 
 Or via POST:
@@ -106,8 +111,11 @@ Or via POST:
 ```bash
 curl -s -X POST http://localhost:8000/search \
   -H 'content-type: application/json' \
-  -d '{"query": "space exploration", "mode": "hybrid", "size": 5}' | python3 -m json.tool
+  -d '{"query": "children playing outside", "mode": "hybrid", "size": 5}' | python3 -m json.tool
 ```
+
+Each hit's `name` (e.g. `1057251835.jpg`) is the matching image — look it up in the Flickr images
+if you've fetched them (see **Data setup**).
 
 ### Same queries in Dashboards Dev Tools (`http://localhost:5601` → Dev Tools)
 
@@ -118,14 +126,52 @@ POST hybrid-sparse-index/_search?search_pipeline=hybrid-sparse-search
   "query": {
     "hybrid": {
       "queries": [
-        { "match": { "combined_text": "scary movies with ghosts" } },
+        { "match": { "combined_text": "a dog running on the beach" } },
         { "neural_sparse": { "combined_text_embedding": {
-            "query_text": "scary movies with ghosts", "analyzer": "bert-uncased" } } }
+            "query_text": "a dog running on the beach", "analyzer": "bert-uncased" } } }
       ]
     }
   }
 }
 ```
+
+---
+
+## Data setup
+
+The dataset is the **[Flickr30k](https://www.kaggle.com/datasets/hsankesara/flickr-image-dataset)**
+captions — shared across the whole "AI search" POC series (neural sparse → dense semantic →
+multimodal), so the *data* stays constant and only the *technique* changes.
+
+**What's in the repo vs not:**
+
+| Asset | Size | In git? | Notes |
+| --- | --- | --- | --- |
+| `data/results.csv` | 13 MB | ✅ committed | the caption source of truth; all text POCs need only this |
+| `data/flickr_docs.json` | <1 MB | ❌ gitignored | built from the CSV by `make prepare` (deterministic) |
+| the 31k `.jpg` images | 8.5 GB | ❌ never | only the **multimodal** POC needs pixels (see below) |
+
+`make prepare` groups the 5 captions per image, takes a deterministic subset (sorted, first *N*),
+and writes `data/flickr_docs.json`. Tune the size in `.env` (`FLICKR_SUBSET_SIZE`, default `1000`) or
+per-run: `uv run python scripts/prepare_flickr.py --size 500`.
+
+**Reproduce on a new machine** — the text POCs need **no image download**:
+
+```bash
+git clone <repo> && cd opensearch-poc
+make up && make sync && make bootstrap && make prepare && make seed
+```
+
+**Images (only for the future multimodal POC).** The 8.5 GB of images aren't committed. When you get
+to multimodal, rehydrate just the subset one of two ways:
+
+- **Re-download from Kaggle**, then copy the pinned subset into `data/images/` (gitignored):
+  ```bash
+  uv run python scripts/prepare_flickr.py --copy-images \
+      --images-src ~/Downloads/flickr30k_images/flickr30k_images
+  ```
+- **Git LFS** the ~250 MB subset instead, for a fully self-contained `git clone` (no Kaggle account),
+  at the cost of LFS quota.
 
 ---
 
@@ -150,9 +196,11 @@ To rebuild the index from scratch: `uv run python scripts/bootstrap_opensearch.p
 ## Project layout
 
 ```
-opensearch/
+opensearch-poc/
 ├── docker/compose.yml              # OpenSearch (single-node) + Dashboards
-├── scripts/bootstrap_opensearch.py # model + pipelines + index setup
+├── scripts/
+│   ├── bootstrap_opensearch.py     # model + pipelines + index setup
+│   └── prepare_flickr.py           # build the caption dataset from data/results.csv
 ├── app/
 │   ├── config.py                   # settings from .env
 │   ├── opensearch_client.py        # opensearch-py client (http, no auth)
@@ -160,7 +208,10 @@ opensearch/
 │   ├── search.py                   # lexical / sparse / hybrid query builders
 │   ├── ingest.py                   # bulk indexing
 │   └── main.py                     # FastAPI routes
-├── data/sample_docs.json           # sample movie corpus
+├── data/
+│   ├── results.csv                 # Flickr30k captions (committed, 13 MB)
+│   ├── flickr_docs.json            # built by `make prepare` (gitignored)
+│   └── sample_docs.json            # small movie dataset (alternate seed source)
 └── tests/test_search.py            # smoke tests (skip if no cluster)
 ```
 
@@ -170,11 +221,16 @@ opensearch/
 | --- | --- | --- |
 | `GET`  | `/health` | Cluster status |
 | `POST` | `/documents` | Index a list of `{name, combined_text}` docs |
-| `POST` | `/documents/seed` | Index `data/sample_docs.json` |
+| `POST` | `/documents/prepare` | Build the dataset from `data/results.csv` (optional `?size=`); same as `make prepare` |
+| `POST` | `/documents/seed` | Index the prepared dataset (`SEED_DATA_FILE`) |
 | `POST` | `/search` | `{query, mode, size}` — `mode` ∈ `lexical\|sparse\|hybrid` |
 | `GET`  | `/search` | `?q=...&mode=hybrid&size=5` |
 
 Interactive docs at `http://localhost:8000/docs`.
+
+**Demo entirely from Swagger** (no terminal): `make run`, open `/docs`, then click
+**`POST /documents/prepare`** → **`POST /documents/seed`** → **`POST /search`**. (`prepare` writes
+the dataset file locally, so it's a convenience for local demos, not a production endpoint.)
 
 ---
 
@@ -206,8 +262,9 @@ pipeline are identical** in shape.
   `opensearch-neural-sparse-tokenizer-v1` and pass its `model_id` instead of `analyzer`.
 - **Cluster health `yellow`** — expected only if replicas > 0 on a single node; this setup uses
   0 replicas, so health should be `green`.
-- **Slow seeding** — sparse encoding runs per document at ingest; the sample corpus is small on
-  purpose.
+- **Slow seeding** — sparse encoding runs the model per document at ingest, so seed time scales with
+  `FLICKR_SUBSET_SIZE` (~1 min for 1,000 on a single CPU node). Lower it for faster iteration:
+  `uv run python scripts/prepare_flickr.py --size 500`, then re-seed.
 - **`make sync` can't reach the package index** — if `uv` fails with a DNS/connection error to a
   corporate Artifactory (or a `UnknownIssuer` TLS error), you're likely off-VPN. Either connect to
   VPN, or install once from public PyPI:

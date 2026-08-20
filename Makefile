@@ -1,6 +1,6 @@
 COMPOSE := podman-compose -f docker/compose.yml
 
-.PHONY: help sync sync-offvpn up down logs sysctl bootstrap run seed test lint
+.PHONY: help sync sync-offvpn up down logs sysctl bootstrap run prepare seed test lint
 
 help:
 	@echo "Targets:"
@@ -12,7 +12,8 @@ help:
 	@echo "  make logs      - tail OpenSearch logs"
 	@echo "  make bootstrap - register/deploy sparse model + create pipelines & index"
 	@echo "  make run       - run the FastAPI app (http://localhost:8000/docs)"
-	@echo "  make seed      - index the sample corpus via the API"
+	@echo "  make prepare   - build the Flickr caption dataset (data/flickr_docs.json)"
+	@echo "  make seed      - index the dataset via the API"
 	@echo "  make test      - run pytest"
 	@echo "  make lint      - run ruff"
 
@@ -47,6 +48,9 @@ bootstrap:
 
 run:
 	uv run --no-sync uvicorn app.main:app --reload
+
+prepare:
+	uv run --no-sync python scripts/prepare_flickr.py
 
 seed:
 	curl -s -X POST http://localhost:8000/documents/seed | python3 -m json.tool
