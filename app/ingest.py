@@ -19,7 +19,12 @@ def bulk_index(client, settings: Settings, documents: list[dict]) -> tuple[int, 
 
     for start in range(0, len(documents), BATCH_SIZE):
         batch = documents[start : start + BATCH_SIZE]
-        actions = [{"_index": settings.index_name, "_source": doc} for doc in batch]
+        # Use the image filename (`name`) as `_id` so re-seeding overwrites the same
+        # document instead of appending a duplicate (indexing is idempotent per _id).
+        actions = [
+            {"_index": settings.index_name, "_id": doc.get("name"), "_source": doc}
+            for doc in batch
+        ]
         success, errors = helpers.bulk(
             client, actions, raise_on_error=False, request_timeout=300
         )

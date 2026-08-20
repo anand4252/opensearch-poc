@@ -6,10 +6,12 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 
+from app.bootstrap import run_bootstrap
 from app.config import Settings, get_settings
 from app.dataset import build_dataset
 from app.ingest import bulk_index, index_count
 from app.models import (
+    BootstrapResponse,
     IngestRequest,
     IngestResponse,
     PrepareResponse,
@@ -49,6 +51,23 @@ def health():
     return {"status": h["status"], "cluster_name": h["cluster_name"]}
 
 
+@app.post("/admin/bootstrap", response_model=BootstrapResponse)
+def bootstrap(recreate_index: bool = False, persist: bool = True) -> BootstrapResponse:
+    """Bootstrap the cluster: ML settings, sparse model, ingest/search pipelines, index.
+
+    Same logic as `make bootstrap`; exposed here so you can step through it in a
+    debugger. `recreate_index` drops & rebuilds the index if present. `persist` writes
+    the resolved MODEL_ID to .env (pass false to leave .env untouched while debugging).
+    """
+    try:
+        result = run_bootstrap(
+            client(), settings(), recreate_index=recreate_index, persist=persist
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return BootstrapResponse(**result)
+
+
 @app.post("/documents", response_model=IngestResponse)
 def add_documents(req: IngestRequest) -> IngestResponse:
     docs = [d.model_dump() for d in req.documents]
@@ -59,11 +78,11 @@ def add_documents(req: IngestRequest) -> IngestResponse:
 
 
 @app.post("/documents/prepare", response_model=PrepareResponse)
-def prepare_dataset(size: int | None = None) -> PrepareResponse:
+def prepare_dataset(size: int = settings().flickr_subset_size) -> PrepareResponse:
     """Build the seed dataset (data/results.csv -> data/flickr_docs.json).
 
     Same transform as `make prepare`; handy for a click-through demo (prepare -> seed).
-    Optional `size` overrides FLICKR_SUBSET_SIZE for this build.
+    `size` defaults to FLICKR_SUBSET_SIZE and sets how many images to build.
     """
     try:
         result = build_dataset(settings(), size=size)

@@ -32,6 +32,15 @@ class PrepareResponse(BaseModel):
     output_file: str
 
 
+class BootstrapResponse(BaseModel):
+    model_id: str
+    model_reused: bool
+    index_created: bool
+    ingest_pipeline: str
+    search_pipeline: str
+    persisted: bool
+
+
 class SearchRequest(BaseModel):
     query: str
     mode: SearchMode = SearchMode.hybrid
