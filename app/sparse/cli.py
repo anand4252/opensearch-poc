@@ -1,24 +1,19 @@
-"""Bootstrap a local OpenSearch cluster for hybrid (BM25 + neural sparse) search.
+"""CLI to bootstrap the neural-sparse search POC.
 
-Thin CLI wrapper around `app.bootstrap.run_bootstrap` (the same logic the
-`/admin/bootstrap` endpoint uses). See app/bootstrap.py for the step-by-step detail.
+Thin wrapper around `app.sparse.bootstrap.run_bootstrap` (the same logic the
+`/sparse/bootstrap` endpoint uses). See app/sparse/bootstrap.py for step detail.
 
-Run:  uv run python scripts/bootstrap_opensearch.py
-      uv run python scripts/bootstrap_opensearch.py --recreate-index   # drop & recreate index
+Run:  python -m app.sparse.cli
+      python -m app.sparse.cli --recreate-index   # drop & recreate index
 """
 
 from __future__ import annotations
 
 import argparse
-import sys
-from pathlib import Path
 
-# Allow running as a plain script: `python scripts/bootstrap_opensearch.py`
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from app.bootstrap import run_bootstrap  # noqa: E402
-from app.config import get_settings  # noqa: E402
-from app.opensearch_client import build_client  # noqa: E402
+from app.config import get_settings
+from app.opensearch_client import build_client
+from app.sparse.bootstrap import run_bootstrap
 
 
 def main() -> int:

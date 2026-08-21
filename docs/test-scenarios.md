@@ -4,13 +4,24 @@ Demo queries built from the actual vocabulary of the 1,000-caption Flickr30k sub
 (`data/flickr_docs.json`). The goal of a good demo is to **contrast search modes on the
 same query** — pick queries where `lexical` and `sparse`/`hybrid` visibly diverge.
 
-Run any query three ways to compare:
+Run any query several ways to compare. **Neural-sparse POC** (`hybrid-sparse-index`):
 
 ```
-GET /search?q=<query>&mode=lexical
-GET /search?q=<query>&mode=sparse
-GET /search?q=<query>&mode=hybrid
+GET /sparse/search?q=<query>&mode=lexical
+GET /sparse/search?q=<query>&mode=sparse
+GET /sparse/search?q=<query>&mode=hybrid
 ```
+
+**Dense semantic POC** (`semantic-dense-index`, `neural` kNN query — runs the embedding
+model at query time):
+
+```
+GET /semantic/search?q=<query>
+```
+
+The same query set below works for both. The most instructive demo is running a query
+through `mode=lexical` (string matching), then `mode=sparse`, then `/semantic/search`
+(dense) — three different retrieval mechanisms, same dataset.
 
 ---
 

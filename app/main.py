@@ -1,48 +1,22 @@
-"""FastAPI app exposing health, ingest, and hybrid-search endpoints."""
+"""FastAPI app for the OpenSearch AI-search POCs.
 
-import json
-from functools import lru_cache
-from pathlib import Path
+Thin assembler: shared endpoints (health, dataset prepare) live here; each technique's
+endpoints live in its own router (`app/sparse/routes.py`, `app/semantic/routes.py`) and
+are mounted below. See docs/ for the per-chapter write-ups.
+"""
 
 from fastapi import FastAPI, HTTPException
 
-from app.bootstrap import run_bootstrap
-from app.config import Settings, get_settings
 from app.dataset import build_dataset
-from app.ingest import bulk_index, index_count
-from app.models import (
-    BootstrapResponse,
-    IngestRequest,
-    IngestResponse,
-    PrepareResponse,
-    SearchMode,
-    SearchRequest,
-    SearchResponse,
-)
-from app.opensearch_client import build_client
-from app.search import run_search
+from app.deps import client, settings
+from app.models import PrepareResponse
+from app.semantic.routes import router as semantic_router
+from app.sparse.routes import router as sparse_router
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-
-app = FastAPI(title="OpenSearch Hybrid Sparse Search", version="0.1.0")
+app = FastAPI(title="OpenSearch AI Search POCs", version="0.1.0")
 
 
-def _seed_file(s: Settings) -> Path:
-    p = Path(s.seed_data_file).expanduser()
-    return p if p.is_absolute() else REPO_ROOT / p
-
-
-@lru_cache
-def settings() -> Settings:
-    return get_settings()
-
-
-@lru_cache
-def client():
-    return build_client(settings())
-
-
-@app.get("/health")
+@app.get("/health", tags=["shared"])
 def health():
     try:
         h = client().cluster.health()
@@ -51,38 +25,13 @@ def health():
     return {"status": h["status"], "cluster_name": h["cluster_name"]}
 
 
-@app.post("/admin/bootstrap", response_model=BootstrapResponse)
-def bootstrap(recreate_index: bool = False, persist: bool = True) -> BootstrapResponse:
-    """Bootstrap the cluster: ML settings, sparse model, ingest/search pipelines, index.
-
-    Same logic as `make bootstrap`; exposed here so you can step through it in a
-    debugger. `recreate_index` drops & rebuilds the index if present. `persist` writes
-    the resolved MODEL_ID to .env (pass false to leave .env untouched while debugging).
-    """
-    try:
-        result = run_bootstrap(
-            client(), settings(), recreate_index=recreate_index, persist=persist
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return BootstrapResponse(**result)
-
-
-@app.post("/documents", response_model=IngestResponse)
-def add_documents(req: IngestRequest) -> IngestResponse:
-    docs = [d.model_dump() for d in req.documents]
-    success, errors = bulk_index(client(), settings(), docs)
-    return IngestResponse(
-        indexed=success, errors=errors, total_in_index=index_count(client(), settings())
-    )
-
-
-@app.post("/documents/prepare", response_model=PrepareResponse)
+@app.post("/dataset/prepare", response_model=PrepareResponse, tags=["shared"])
 def prepare_dataset(size: int = settings().flickr_subset_size) -> PrepareResponse:
-    """Build the seed dataset (data/results.csv -> data/flickr_docs.json).
+    """Build the shared seed dataset (data/results.csv -> data/flickr_docs.json).
 
     Same transform as `make prepare`; handy for a click-through demo (prepare -> seed).
-    `size` defaults to FLICKR_SUBSET_SIZE and sets how many images to build.
+    Both the sparse and semantic seeds read this file. `size` defaults to
+    FLICKR_SUBSET_SIZE and sets how many images to build.
     """
     try:
         result = build_dataset(settings(), size=size)
@@ -91,33 +40,5 @@ def prepare_dataset(size: int = settings().flickr_subset_size) -> PrepareRespons
     return PrepareResponse(**result)
 
 
-@app.post("/documents/seed", response_model=IngestResponse)
-def seed_documents() -> IngestResponse:
-    data_file = _seed_file(settings())
-    if not data_file.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Seed dataset not found: {data_file}. Build it first: "
-                "run `make prepare` or POST /documents/prepare."
-            ),
-        )
-    docs = json.loads(data_file.read_text())
-    success, errors = bulk_index(client(), settings(), docs)
-    return IngestResponse(
-        indexed=success, errors=errors, total_in_index=index_count(client(), settings())
-    )
-
-
-@app.post("/search", response_model=SearchResponse)
-def search(req: SearchRequest) -> SearchResponse:
-    try:
-        return run_search(client(), settings(), req.query, req.mode, req.size)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@app.get("/search", response_model=SearchResponse)
-def search_get(q: str, mode: SearchMode = SearchMode.hybrid, size: int = 5) -> SearchResponse:
-    """Convenience GET variant, e.g. /search?q=horror%20movies&mode=hybrid"""
-    return search(SearchRequest(query=q, mode=mode, size=size))
+app.include_router(sparse_router)
+app.include_router(semantic_router)

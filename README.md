@@ -11,6 +11,18 @@ search pipeline.
 - **API:** FastAPI with `lexical` / `sparse` / `hybrid` search modes
 - **Package manager:** `uv`
 
+## Docs / AI-search chapters
+
+This repo is a series of AI-search POCs over one shared Flickr caption dataset — only the
+technique changes between chapters.
+
+| Chapter | Technique | Code | Doc |
+| --- | --- | --- | --- |
+| Neural sparse + hybrid | `rank_features`, doc-only | `app/sparse/` | this README |
+| Dense semantic | `knn_vector` + `neural` query | `app/semantic/` | [docs/dense-semantic-search.md](docs/dense-semantic-search.md) |
+
+- **[docs/test-scenarios.md](docs/test-scenarios.md)** — demo query set (works for both chapters).
+
 ---
 
 ## How hybrid search works here
@@ -97,19 +109,19 @@ are scene descriptions where the *concept* matters more than the exact words:
 
 ```bash
 # Lexical only — needs the literal words to appear
-curl -s 'http://localhost:8000/search?q=a%20dog%20running%20on%20the%20beach&mode=lexical' | python3 -m json.tool
+curl -s 'http://localhost:8000/sparse/search?q=a%20dog%20running%20on%20the%20beach&mode=lexical' | python3 -m json.tool
 
 # Sparse semantic — also matches captions via term expansion
-curl -s 'http://localhost:8000/search?q=a%20dog%20running%20on%20the%20beach&mode=sparse'  | python3 -m json.tool
+curl -s 'http://localhost:8000/sparse/search?q=a%20dog%20running%20on%20the%20beach&mode=sparse'  | python3 -m json.tool
 
 # Hybrid — normalized blend of both (default)
-curl -s 'http://localhost:8000/search?q=a%20dog%20running%20on%20the%20beach&mode=hybrid'  | python3 -m json.tool
+curl -s 'http://localhost:8000/sparse/search?q=a%20dog%20running%20on%20the%20beach&mode=hybrid'  | python3 -m json.tool
 ```
 
 Or via POST:
 
 ```bash
-curl -s -X POST http://localhost:8000/search \
+curl -s -X POST http://localhost:8000/sparse/search \
   -H 'content-type: application/json' \
   -d '{"query": "children playing outside", "mode": "hybrid", "size": 5}' | python3 -m json.tool
 ```
@@ -177,7 +189,8 @@ to multimodal, rehydrate just the subset one of two ways:
 
 ## What `make bootstrap` does (the 6 steps)
 
-Implemented in [`scripts/bootstrap_opensearch.py`](scripts/bootstrap_opensearch.py), idempotent:
+Logic in [`app/sparse/bootstrap.py`](app/sparse/bootstrap.py), driven by the CLI
+[`app/sparse/cli.py`](app/sparse/cli.py) (`make bootstrap`), idempotent:
 
 1. **ML Commons settings** — allow the model to run on this single (non-ML) node.
 2. **Register + deploy** the sparse ingest model; poll the task until `COMPLETED`, capture `MODEL_ID`
@@ -189,7 +202,7 @@ Implemented in [`scripts/bootstrap_opensearch.py`](scripts/bootstrap_opensearch.
    `[lexical, sparse]` = `[0.3, 0.7]` (tune in `.env`).
 6. **Persist** the `model_id` to `.env`.
 
-To rebuild the index from scratch: `uv run python scripts/bootstrap_opensearch.py --recreate-index`.
+To rebuild the index from scratch: `uv run python -m app.sparse.cli --recreate-index`.
 
 ---
 
@@ -199,38 +212,58 @@ To rebuild the index from scratch: `uv run python scripts/bootstrap_opensearch.p
 opensearch-poc/
 ├── docker/compose.yml              # OpenSearch (single-node) + Dashboards
 ├── scripts/
-│   ├── bootstrap_opensearch.py     # model + pipelines + index setup
-│   └── prepare_flickr.py           # build the caption dataset from data/results.csv
+│   └── prepare_flickr.py           # build the shared caption dataset from data/results.csv
 ├── app/
 │   ├── config.py                   # settings from .env
 │   ├── opensearch_client.py        # opensearch-py client (http, no auth)
 │   ├── models.py                   # request/response schemas
-│   ├── search.py                   # lexical / sparse / hybrid query builders
-│   ├── ingest.py                   # bulk indexing
-│   └── main.py                     # FastAPI routes
+│   ├── ingest.py                   # bulk indexing (shared)
+│   ├── dataset.py                  # build flickr_docs.json from captions (shared)
+│   ├── ml_commons.py               # model register/deploy/reuse + readiness (shared)
+│   ├── deps.py                     # shared FastAPI request deps (settings, client, seed loader)
+│   ├── main.py                     # app assembler: shared endpoints + mounts routers
+│   ├── sparse/                     # neural-sparse POC (BM25 + sparse, hybrid)
+│   │   ├── bootstrap.py            #   pipelines + index wiring
+│   │   ├── cli.py                  #   `python -m app.sparse.cli` (make bootstrap)
+│   │   ├── search.py               #   lexical / sparse / hybrid query builders
+│   │   └── routes.py               #   /sparse/* endpoints
+│   └── semantic/                   # dense semantic POC (knn_vector + neural)
+│       ├── bootstrap.py            #   text_embedding pipeline + knn index wiring
+│       ├── cli.py                  #   `python -m app.semantic.cli` (make bootstrap-semantic)
+│       ├── search.py               #   neural (kNN) query
+│       └── routes.py               #   /semantic/* endpoints
 ├── data/
 │   ├── results.csv                 # Flickr30k captions (committed, 13 MB)
 │   ├── flickr_docs.json            # built by `make prepare` (gitignored)
 │   └── sample_docs.json            # small movie dataset (alternate seed source)
-└── tests/test_search.py            # smoke tests (skip if no cluster)
+├── docs/                           # per-chapter write-ups + test scenarios
+└── tests/                          # smoke tests (skip if no cluster)
 ```
 
 ## API endpoints
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET`  | `/health` | Cluster status |
-| `POST` | `/documents` | Index a list of `{name, combined_text}` docs |
-| `POST` | `/documents/prepare` | Build the dataset from `data/results.csv` (optional `?size=`); same as `make prepare` |
-| `POST` | `/documents/seed` | Index the prepared dataset (`SEED_DATA_FILE`) |
-| `POST` | `/search` | `{query, mode, size}` — `mode` ∈ `lexical\|sparse\|hybrid` |
-| `GET`  | `/search` | `?q=...&mode=hybrid&size=5` |
+Endpoints are grouped by tag in Swagger: **shared**, **sparse**, **semantic**.
+
+| Tag | Method | Path | Purpose |
+| --- | --- | --- | --- |
+| shared | `GET`  | `/health` | Cluster status |
+| shared | `POST` | `/dataset/prepare` | Build the shared dataset from `data/results.csv` (optional `?size=`); same as `make prepare` |
+| sparse | `POST` | `/sparse/bootstrap` | ML settings + sparse model + pipelines + index (`?recreate_index=&persist=`) |
+| sparse | `POST` | `/sparse/documents` | Ad-hoc index a list of `{name, combined_text}` docs |
+| sparse | `POST` | `/sparse/seed` | Index the prepared dataset into the sparse index |
+| sparse | `POST` | `/sparse/search` | `{query, mode, size}` — `mode` ∈ `lexical\|sparse\|hybrid` |
+| sparse | `GET`  | `/sparse/search` | `?q=...&mode=hybrid&size=5` |
+| semantic | `POST` | `/semantic/bootstrap` | Dense model + text_embedding pipeline + knn index |
+| semantic | `POST` | `/semantic/seed` | Index the prepared dataset into the dense index |
+| semantic | `POST` | `/semantic/search` | Dense `neural` (kNN) search; `{query, size}` or `?q=...` |
+| semantic | `GET`  | `/semantic/search` | `?q=puppy&size=5` |
 
 Interactive docs at `http://localhost:8000/docs`.
 
 **Demo entirely from Swagger** (no terminal): `make run`, open `/docs`, then click
-**`POST /documents/prepare`** → **`POST /documents/seed`** → **`POST /search`**. (`prepare` writes
-the dataset file locally, so it's a convenience for local demos, not a production endpoint.)
+**`POST /dataset/prepare`** → **`POST /sparse/seed`** → **`POST /sparse/search`** (or the
+`/semantic/*` equivalents). (`prepare` writes the dataset file locally, so it's a convenience
+for local demos, not a production endpoint.)
 
 ---
 

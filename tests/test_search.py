@@ -5,7 +5,7 @@ import pytest
 from app.config import get_settings
 from app.models import SearchMode
 from app.opensearch_client import build_client
-from app.search import build_body, run_search
+from app.sparse.search import build_body, run_search
 
 
 @pytest.fixture(scope="module")

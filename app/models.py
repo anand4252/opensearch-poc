@@ -57,3 +57,16 @@ class SearchResponse(BaseModel):
     mode: SearchMode
     query: str
     hits: list[SearchHit]
+
+
+class DenseSearchRequest(BaseModel):
+    """Pure dense semantic search has a single mode, so no `mode` field."""
+
+    query: str
+    size: int = Field(default=5, ge=1, le=50)
+
+
+class DenseSearchResponse(BaseModel):
+    query: str
+    model_id: str
+    hits: list[SearchHit]

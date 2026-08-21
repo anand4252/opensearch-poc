@@ -1,0 +1,51 @@
+"""CLI to bootstrap the DENSE semantic search POC (msmarco text-embedding + knn_vector).
+
+Thin wrapper around `app.semantic.bootstrap.run_bootstrap` (the same logic the
+`/semantic/bootstrap` endpoint uses). See app/semantic/bootstrap.py for step detail.
+
+Run:  python -m app.semantic.cli
+      python -m app.semantic.cli --recreate-index
+"""
+
+from __future__ import annotations
+
+import argparse
+
+from app.config import get_settings
+from app.opensearch_client import build_client
+from app.semantic.bootstrap import run_bootstrap
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Bootstrap OpenSearch dense semantic search")
+    parser.add_argument(
+        "--recreate-index",
+        action="store_true",
+        help="Drop and recreate the dense index if it already exists.",
+    )
+    args = parser.parse_args()
+
+    settings = get_settings()
+    client = build_client(settings)
+
+    try:
+        health = client.cluster.health()
+    except Exception as exc:  # pragma: no cover - connection error path
+        print(f"ERROR: cannot reach OpenSearch at {settings.opensearch_url}: {exc}")
+        print("Is the stack up?  make up   (then wait for it to become healthy)")
+        return 1
+    print(f"Connected. Cluster '{health['cluster_name']}' status: {health['status']}")
+
+    result = run_bootstrap(client, settings, recreate_index=args.recreate_index)
+
+    print("\nDense bootstrap complete.")
+    print(f"  model_id        : {result['model_id']}")
+    print(f"  model reused    : {result['model_reused']}")
+    print(f"  index           : {settings.dense_index_name} (created: {result['index_created']})")
+    print(f"  ingest pipeline : {result['ingest_pipeline']}")
+    print("\nNext:  make run   then   make seed-semantic")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

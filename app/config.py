@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     model_format: str = "TORCH_SCRIPT"
     model_id: str = ""
 
+    embedding_field: str = "combined_text_embedding"
     # Neural sparse QUERY side (doc-only): OpenSearch 3.x tokenizes the query with a
     # built-in analyzer (no query-time model inference), so no tokenizer model is needed.
     query_analyzer: str = "bert-uncased"
@@ -32,7 +33,22 @@ class Settings(BaseSettings):
 
     # Field names used across the index/pipelines/queries
     text_field: str = "combined_text"
-    embedding_field: str = "combined_text_embedding"
+
+
+    # --- Dense semantic search (separate POC) ---
+    # Its own index/pipeline/model so it sits alongside the sparse POC on the same
+    # dataset. Uses a dense text-embedding model + knn_vector + `neural` query, which
+    # (unlike sparse doc-only) runs the model at QUERY time.
+    dense_index_name: str = "semantic-dense-index"
+    dense_ingest_pipeline: str = "semantic-dense-ingest"
+    dense_model_name: str = "huggingface/sentence-transformers/msmarco-distilbert-base-tas-b"
+    dense_model_version: str = "1.0.3"
+    dense_model_format: str = "TORCH_SCRIPT"
+    dense_model_id: str = ""
+    embedding_dimension: int = 768
+    dense_space_type: str = "l2"
+    dense_engine: str = "lucene"
+    knn_field: str = "combined_text_knn"
 
     # Dataset / seeding. `seed_data_file` is what /documents/seed indexes; the Flickr
     # subset is built from `flickr_csv` by scripts/prepare_flickr.py (see README).
