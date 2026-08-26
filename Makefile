@@ -1,7 +1,12 @@
 COMPOSE := podman-compose -f docker/compose.yml
 
-.PHONY: help sync sync-offvpn up down logs sysctl bootstrap run prepare seed \
-        bootstrap-semantic seed-semantic test lint
+.PHONY: help sync sync-offvpn sync-multimodal sync-multimodal-offvpn up down logs sysctl \
+        bootstrap run prepare seed bootstrap-semantic seed-semantic \
+        copy-images bootstrap-multimodal seed-multimodal test lint
+
+# Override with the folder that holds the Flickr .jpg files, e.g.:
+#   make copy-images IMAGES_SRC=~/Downloads/flickr30k_images/flickr30k_images
+IMAGES_SRC ?= /path/to/flickr30k_images/flickr30k_images
 
 help:
 	@echo "Targets:"
@@ -17,6 +22,11 @@ help:
 	@echo "  make seed      - index the dataset via the API"
 	@echo "  make bootstrap-semantic - register/deploy dense model + create dense pipeline & index"
 	@echo "  make seed-semantic      - index the dataset into the dense index via the API"
+	@echo "  make sync-multimodal    - install the multimodal extra (CLIP/torch), on VPN"
+	@echo "  make sync-multimodal-offvpn - same, from public PyPI (off VPN)"
+	@echo "  make copy-images IMAGES_SRC=... - copy the subset .jpgs into data/images"
+	@echo "  make bootstrap-multimodal - create the multimodal (CLIP) kNN index"
+	@echo "  make seed-multimodal      - embed + index the subset images via the API"
 	@echo "  make test      - run pytest"
 	@echo "  make lint      - run ruff"
 
@@ -31,6 +41,16 @@ sync-offvpn:
 	    -u SSL_CERT_FILE -u CURL_CA_BUNDLE -u VIRTUAL_ENV \
 	    UV_DEFAULT_INDEX=https://pypi.org/simple UV_INDEX= \
 	    uv sync --extra dev --native-tls
+
+# Multimodal chapter needs the heavy `multimodal` extra (sentence-transformers + torch).
+sync-multimodal:
+	uv sync --extra dev --extra multimodal
+
+sync-multimodal-offvpn:
+	env -u HTTP_PROXY -u HTTPS_PROXY -u http_proxy -u https_proxy \
+	    -u SSL_CERT_FILE -u CURL_CA_BUNDLE -u VIRTUAL_ENV \
+	    UV_DEFAULT_INDEX=https://pypi.org/simple UV_INDEX= \
+	    uv sync --extra dev --extra multimodal --native-tls
 
 # sysctl:
 # 	podman machine ssh 'sudo sysctl -w vm.max_map_count=262144'
@@ -63,6 +83,15 @@ bootstrap-semantic:
 
 seed-semantic:
 	curl -s -X POST http://localhost:8000/semantic/seed | python3 -m json.tool
+
+copy-images:
+	uv run --no-sync python scripts/prepare_flickr.py --copy-images --images-src $(IMAGES_SRC)
+
+bootstrap-multimodal:
+	uv run --no-sync python -m app.multimodal.cli
+
+seed-multimodal:
+	curl -s -X POST http://localhost:8000/multimodal/seed | python3 -m json.tool
 
 test:
 	uv run --no-sync pytest

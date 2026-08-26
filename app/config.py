@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     dense_engine: str = "lucene"
     knn_field: str = "combined_text_knn"
 
+    # --- Multimodal search (CLIP, run in the app; separate POC) ---
+    # Unlike sparse/dense, the model (CLIP) runs in OUR app, not inside OpenSearch:
+    # we embed the image pixels ourselves and OpenSearch is just the kNN vector store.
+    multimodal_index_name: str = "multimodal-clip-index"
+    clip_model_name: str = "clip-ViT-B-32"
+    clip_dimension: int = 512
+    clip_space_type: str = "cosinesimil"
+    clip_engine: str = "lucene"
+    image_vector_field: str = "image_vector"
+
     # Dataset / seeding. `seed_data_file` is what /documents/seed indexes; the Flickr
     # subset is built from `flickr_csv` by scripts/prepare_flickr.py (see README).
     seed_data_file: str = "data/flickr_docs.json"

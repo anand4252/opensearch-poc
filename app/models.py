@@ -70,3 +70,41 @@ class DenseSearchResponse(BaseModel):
     query: str
     model_id: str
     hits: list[SearchHit]
+
+
+class MultimodalSearchRequest(BaseModel):
+    """Text->image search: we embed this text with CLIP and find the nearest images."""
+
+    query: str
+    size: int = Field(default=5, ge=1, le=50)
+
+
+class MultimodalSearchResponse(BaseModel):
+    query: str
+    hits: list[SearchHit]
+
+
+class CopyImagesRequest(BaseModel):
+    """Source folder holding the full Flickr .jpg files (the subset is copied from here)."""
+
+    images_src: str
+
+
+class CopyImagesResponse(BaseModel):
+    copied: int
+    requested: int
+    missing: int
+    images_dir: str
+
+
+class MultimodalBootstrapResponse(BaseModel):
+    index: str
+    index_created: bool
+    dimension: int
+
+
+class MultimodalSeedResponse(BaseModel):
+    indexed: int
+    errors: int
+    missing_images: int
+    total_in_index: int

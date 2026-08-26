@@ -20,8 +20,9 @@ technique changes between chapters.
 | --- | --- | --- | --- |
 | Neural sparse + hybrid | `rank_features`, doc-only | `app/sparse/` | this README |
 | Dense semantic | `knn_vector` + `neural` query | `app/semantic/` | [docs/dense-semantic-search.md](docs/dense-semantic-search.md) |
+| Multimodal (text → image) | CLIP in-app + `knn` query | `app/multimodal/` | [docs/multimodal-search.md](docs/multimodal-search.md) |
 
-- **[docs/test-scenarios.md](docs/test-scenarios.md)** — demo query set (works for both chapters).
+- **[docs/test-scenarios.md](docs/test-scenarios.md)** — demo query set (works across chapters).
 
 ---
 

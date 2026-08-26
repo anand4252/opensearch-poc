@@ -18,6 +18,12 @@ dev = [
     "pytest>=8.2",
     "ruff>=0.6",
 ]
+# Multimodal chapter only. Heavy (pulls in torch), so it's opt-in:
+#   uv sync --extra multimodal   (or `make sync-multimodal`)
+multimodal = [
+    "sentence-transformers>=3.0",
+    "Pillow>=10.0",
+]
 
 [build-system]
 requires = ["hatchling"]

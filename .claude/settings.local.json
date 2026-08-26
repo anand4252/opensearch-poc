@@ -5,7 +5,9 @@
       "Bash(docker --version)",
       "Bash(podman machine *)",
       "Bash(podman compose *)",
-      "WebFetch(domain:docs.opensearch.org)"
+      "WebFetch(domain:docs.opensearch.org)",
+      "Bash(find /Users/t903727/Downloads/flickr30k_images/flickr30k_images -maxdepth 1 -type f -iname *.jpg)",
+      "Bash(.venv/bin/python *)"
     ]
   }
 }

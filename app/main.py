@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException
 from app.dataset import build_dataset
 from app.deps import client, settings
 from app.models import PrepareResponse
+from app.multimodal.routes import router as multimodal_router
 from app.semantic.routes import router as semantic_router
 from app.sparse.routes import router as sparse_router
 
@@ -42,3 +43,4 @@ def prepare_dataset(size: int = settings().flickr_subset_size) -> PrepareRespons
 
 app.include_router(sparse_router)
 app.include_router(semantic_router)
+app.include_router(multimodal_router)
