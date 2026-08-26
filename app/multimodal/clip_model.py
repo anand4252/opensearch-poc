@@ -45,6 +45,20 @@ def embed_text(settings: Settings, query: str) -> list[float]:
     return vec.tolist()
 
 
+def embed_image_bytes(settings: Settings, data: bytes) -> list[float]:
+    """Embed a single in-memory image (e.g. an upload) into a unit-length CLIP vector."""
+    import io
+
+    try:
+        from PIL import Image
+    except ImportError as exc:
+        raise RuntimeError(_INSTALL_HINT) from exc
+    model = _load_model(settings.clip_model_name)
+    image = Image.open(io.BytesIO(data)).convert("RGB")
+    vec = model.encode([image], normalize_embeddings=True)[0]
+    return vec.tolist()
+
+
 def embed_images(settings: Settings, paths: list[Path]) -> list[list[float]]:
     """Embed image files into unit-length CLIP vectors (same space as the text).
 

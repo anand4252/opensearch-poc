@@ -33,7 +33,7 @@ help:
 sync:
 	uv sync --extra dev
 
-# Off-VPN install: this Mac's shell points uv at a private package index (UV_DEFAULT_INDEX)
+# Off-VPN install: this Mac's shell points uv at Artifactory (UV_DEFAULT_INDEX)
 # and a corporate proxy/cert bundle, none of which resolve off VPN. Strip those for
 # this one command and pull from public PyPI, using the macOS keychain (--native-tls).
 sync-offvpn:

@@ -109,7 +109,9 @@ curl "localhost:8000/multimodal/search?q=a%20dog%20on%20the%20beach"
 | POST | `/multimodal/copy-images` | copy the subset .jpgs from a source folder into `data/images` (`{images_src}`) |
 | POST | `/multimodal/bootstrap` | create the kNN index (`?recreate_index=`) |
 | POST | `/multimodal/seed` | embed the subset images with CLIP + index the vectors |
-| POST/GET | `/multimodal/search` | text → image kNN search; `?q=…&size=…` |
+| POST/GET | `/multimodal/search` | **text → image** kNN search; `?q=…&size=…` |
+| GET | `/multimodal/search-by-name` | **image → image** using an indexed image, e.g. `?name=1000092795.jpg` |
+| POST | `/multimodal/search-by-image` | **image → image** by uploading a photo (needs the `multimodal` extra) |
 
 **Demo entirely from Swagger:** `POST /dataset/prepare` → `POST /multimodal/copy-images`
 (paste your Flickr images path) → `POST /multimodal/bootstrap` → `POST /multimodal/seed`
@@ -148,6 +150,16 @@ networks:
   make run
   ```
 
-## Out of scope (next step)
-**Image → image** search (upload a photo, find visually similar ones) — an easy follow-on,
-since CLIP already embeds images. We'll add it after text → image is solid.
+## Image → image search
+
+Because CLIP embeds images and text into the *same* space, the same index also answers
+"find images like this image":
+
+- **`GET /multimodal/search-by-name?name=1000092795.jpg`** — dep-free; uses an image
+  already in `data/images`. Its nearest neighbor is itself (cosine 1.0), then lookalikes —
+  a nice sanity check.
+- **`POST /multimodal/search-by-image`** — upload a photo (Swagger shows a file picker).
+  Needs `python-multipart` (in the `multimodal` extra); the route is hidden until it's
+  installed, so re-run `make sync-multimodal-offvpn` after pulling this change to enable it.
+
+Both embed the query *image* with CLIP and run the same `knn` query as text search.

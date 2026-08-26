@@ -1,8 +1,9 @@
 """API routes for the multimodal POC (CLIP text->image search)."""
 
+import importlib.util
 import json
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile
 
 from app.dataset import copy_images, resolve
 from app.deps import client, settings
@@ -15,8 +16,16 @@ from app.models import (
     MultimodalSeedResponse,
 )
 from app.multimodal.bootstrap import run_bootstrap
-from app.multimodal.search import run_multimodal_search
+from app.multimodal.search import run_image_search, run_text_search
 from app.multimodal.seed import seed_images
+
+# The file-upload route needs python-multipart (ships with the `multimodal` extra).
+# FastAPI errors at route-registration time if it's missing, so only register that route
+# when it's available — the base app (and the dep-free by-name route) still boot without it.
+_HAS_MULTIPART = (
+    importlib.util.find_spec("multipart") is not None
+    or importlib.util.find_spec("python_multipart") is not None
+)
 
 router = APIRouter(prefix="/multimodal", tags=["multimodal"])
 
@@ -78,7 +87,7 @@ def seed() -> MultimodalSeedResponse:
 def search(req: MultimodalSearchRequest) -> MultimodalSearchResponse:
     """Text->image search: your text is embedded with CLIP and matched to image vectors."""
     try:
-        return run_multimodal_search(client(), settings(), req.query, req.size)
+        return run_text_search(client(), settings(), req.query, req.size)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -87,3 +96,31 @@ def search(req: MultimodalSearchRequest) -> MultimodalSearchResponse:
 def search_get(q: str, size: int = 5) -> MultimodalSearchResponse:
     """Convenience GET variant, e.g. /multimodal/search?q=a%20dog%20on%20the%20beach"""
     return search(MultimodalSearchRequest(query=q, size=size))
+
+
+@router.get("/search-by-name", response_model=MultimodalSearchResponse)
+def search_by_name(name: str, size: int = 5) -> MultimodalSearchResponse:
+    """Image -> image using an image already in data/images (e.g. name=1000092795.jpg).
+
+    Dep-free way to try image search: the nearest hit is the image itself, then lookalikes.
+    """
+    img = resolve(settings().flickr_images_dir) / name
+    if not img.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found in data/images: {name}")
+    return run_image_search(client(), settings(), img.read_bytes(), size, label=name)
+
+
+if _HAS_MULTIPART:
+
+    @router.post("/search-by-image", response_model=MultimodalSearchResponse)
+    async def search_by_image(
+        file: UploadFile, size: int = 5
+    ) -> MultimodalSearchResponse:
+        """Image -> image: upload a photo, get the visually most similar indexed images."""
+        data = await file.read()
+        try:
+            return run_image_search(
+                client(), settings(), data, size, label=file.filename or "uploaded image"
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
